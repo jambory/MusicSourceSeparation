@@ -2,6 +2,8 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import activations, layers
 
+from parameters import Parameters
+
 class Encoder(layers.Layer):
     """ 
     First step of model not counting, preprocessing data. Puts the inputs through a 1x1 Convolutional layer with N output channels.
@@ -12,9 +14,9 @@ class Encoder(layers.Layer):
         N: Encoder output size
 
     """
-    def __init__(self, N):
+    def __init__(self, param: Parameters):
         super(Encoder, self).__init__(name='Encoder')
-        self.U = layers.Conv1D(N,1)
+        self.U = layers.Conv1D(param.N,1)
 
     def call(self, x): # (M, K, L)
         return self.U(x) # (M, K, N)
@@ -35,21 +37,23 @@ class Separator(layers.Layer):
         C: (int) Amount of sources being estimated
     
     """
-    def __init__(self, N, B, R, X, H, C, P, casual, skip=True):
+    def __init__(self, param: Parameters):
         super(Separator, self).__init__(name='Separator')
-        self.C = C
-        self.N = N
-        self.skip=skip
-        if casual:
-            self.normalization = cLN(N)
+        self.M = param.M
+        self.K = param.K
+        self.C = param.C
+        self.N = param.N
+        self.skip=param.skip
+        if param.casual:
+            self.normalization = cLN(param.N)
         else:
-            self.normalization = gLN(N) 
-        self.bottle_neck = layers.Conv1D(B,1)
+            self.normalization = gLN(param.N) 
+        self.bottle_neck = layers.Conv1D(param.B,1)
         
-        self.temporal_conv = [TemporalConv(X, H, B, P, casual, skip=self.skip) for r in range(R)]
+        self.temporal_conv = [TemporalConv(param.X, param.H, param.B, param.P, param.casual, skip=param.skip) for r in range(param.R)]
         self.skip_conn = layers.Add()
         self.prelu = layers.PReLU()
-        self.m_i = layers.Conv1D(C*N, 1)
+        self.m_i = layers.Conv1D(param.C*param.N, 1)
 
     def call(self, w): # (M, K, N)
         normalized_w = self.normalization(w) # (M, K, N)
@@ -67,8 +71,7 @@ class Separator(layers.Layer):
 
         output = self.prelu(output)
         estimated_masks = self.m_i(output) # (M, K, C*N)
-        M, K, _ = estimated_masks.shape
-        estimated_masks = activations.sigmoid(tf.reshape(estimated_masks, (M, self.C, K, self.N)))
+        estimated_masks = activations.sigmoid(tf.reshape(estimated_masks, (self.M, self.C, self.K, self.N)))
         return estimated_masks
     
 class Decoder(layers.Layer):
@@ -79,22 +82,24 @@ class Decoder(layers.Layer):
     Args:
         L : (int) length of individual chunks of audio.
     """
-    def __init__(self, L):
+    def __init__(self, param: Parameters):
         super(Decoder, self).__init__(name='Decoder')
-        self.L = L
-        self.transpose_conv = layers.Conv1DTranspose(L,1)
+        self.M = param.M
+        self.C = param.C
+        self.K = param.K
+        self.L = param.L
+        self.transpose_conv = layers.Conv1DTranspose(param.L,1)
 
     def call(self, m_i, w):
-        M, C, K, _ = m_i.shape
         est_sources =[]
-        for i in range(C):
+        for i in range(self.C):
             source_mask = m_i[:,i,:,:]
             masked_source = w * source_mask
             est_src = self.transpose_conv(masked_source)
-            est_sources.append(tf.reshape(est_src, (M, 1, K, self.L)))
+            est_sources.append(tf.reshape(est_src, (self.M, 1, self.K, self.L)))
 
         decoded_outputs = tf.concat(est_sources, axis=1)
-        return decoded_outputs      
+        return decoded_outputs        
     
 class Conv1DBlock(layers.Layer):
     def __init__(self, H, B, P, dilation, casual, skip = True):

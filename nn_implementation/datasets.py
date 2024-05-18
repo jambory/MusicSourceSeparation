@@ -178,7 +178,7 @@ def load_unpack_tensordata():
     x = []
     y = []
     for obs in tf_data:
-        train.append(obs[0])
-        test.append(obs[1])
+        x.append(obs[0])
+        y.append(obs[1])
 
     return x, y

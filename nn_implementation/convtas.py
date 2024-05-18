@@ -1,44 +1,30 @@
 from layer import Encoder, Separator, Decoder
 from tensorflow.keras import models
+from parameters import Parameters
+
+# I heavily relied upon, upon Jane Wu's TensorFlow implementation (https://github.com/JaneWuNEU/Conv-TasNet-2) to get this to work.
+# nplab's and kaituoxu's PyTorch implementations of the model were also instrumental for my understanding of the model.
 
 class ConvTasNet(models.Model):
     """
+    Full Conv-TasNet model, coded in TensorFlow. 
     
+    To explain what the model is doing in the most basic way, it takes a dataset of overlapping chunks of a audio in a waveform format then 
+    encodes them using a simple 1D convolution. With this input data, the model is then put through several iterations of downsampling to get 
+    features from the data. These features are then turned into separate masks for each target source in the audio data. Finally the masks are 
+    applied to the orginal encoded data, which is finally put back into its orginal waveform data format with a Transpose 1D convolution.
+
+    To understand the shape of the data throughout the model, I highly recommend looking at the Parameters class documentation, but I tried to 
+    give documentation to the important paramters throughout the layers documentation as well. 
     """
-    def __init__(self,
-                 L: int=16, # Chunk size
-                 C: int=4, # Amount of sources being estimated
-                 N: int=512, # Encoder output size
-                 B: int=128, # Conv1DBlock output size
-                 H: int=512, # Conv1DBlock input size
-                 P: int=3, # Kernel size of Conv1DBlocks
-                 R: int=3, # Amount of repeats of the Temporal Convolution block
-                 X: int=8, # Amount of times Conv1DBlock is applied in a Temporal Convolution block
-                 T: int=3000, # TODO: figure out how to get this param
-                 # win: int=2, # Size of encoder-decoder kernels
-                 overlap: int=8,
-                 skip: bool=True,
-                 casual: bool=False
-                ):
+    def __init__(self, param: Parameters):
         super().__init__(name="ConvTasNet")
-        self.L = L
-        self.C = C
-        self.N = N
-        self.B = B
-        self.H = H
-        self.R = R
-        self.X = X
-        self.T = T
-        self.P = P
-        # self.win = win
-        self.overlap = overlap
-        self.skip = skip
-        self.casual = casual
+        self.param = param
 
 
-        self.encoder = Encoder(self.N)
-        self.separator = Separator(self.N, self.B, self.R, self.X, self.H, self.C, self.P, self.casual, self.skip)
-        self.decoder = Decoder(self.L)
+        self.encoder = Encoder(self.param)
+        self.separator = Separator(self.param)
+        self.decoder = Decoder(self.param)
 
     def call(self, x):
         w = self.encoder(x)

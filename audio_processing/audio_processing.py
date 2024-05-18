@@ -1,7 +1,6 @@
 import soundfile as sf
 import matplotlib.pyplot as plt 
 import numpy as np
-import seaborn as sn
 import librosa
 from IPython.display import Audio
 
@@ -146,8 +145,14 @@ def stft_chunks(chunks, samplerate=44100):
     """ 
     Applies short time fourier transform to all chunks and plots 3, to demonstrate ideas
     """
-    N = len(chunks[0])
-    ft_chunks = list(map(fourier_transform, chunks))
+    chunks = np.array(chunks)
+    K, N = chunks.shape
+    n = np.arange(N)
+    k = n.reshape((N, 1))
+    omega = np.exp(2j * np.pi * k * n / N)
+
+    ft_chunks = chunks @ omega
+    
     frequency_bins = np.fft.fftfreq(N, d=1/samplerate)
 
     fig, axes = plt.subplots(1,3, figsize=(9,4))
@@ -172,13 +177,13 @@ def plot_spectrogram(data, sr=44100):
     for i in indexes:
         freq_vals.append(int(frequency_bins[i]))
 
-    magnitude_spectrum = np.abs(data**2)
+    power_spectrum = np.abs(data)**2
 
     # Plot each chunk as a separate spectrogram
     plt.figure(figsize=(10, 6))
-    plt.imshow((magnitude_spectrum[:,:1023]).T, aspect='auto', origin='lower', cmap='inferno',norm=LogNorm())
+    plt.imshow((power_spectrum[:,:1023]).T, aspect='auto', origin='lower', cmap='inferno',norm=LogNorm())
 
-    plt.colorbar(label='Magnitude')  # Add colorbar with label
+    plt.colorbar(label='Power')  # Add colorbar with label
 
 
     plt.yticks([])
@@ -230,3 +235,42 @@ def create_spectrogram(audio, ax, win_size=2048, hop=None, mus=True):
     img = librosa.display.specshow(librosa.amplitude_to_db(S), y_axis='log', x_axis='time',cmap='magma', ax=ax)
 
     return img, S, X
+
+# def inverse_window(signal, window_length=2048):
+#     """
+#     Apply a window to a signal.
+
+#     Args:
+#     signal (np.ndarray): Input signal.
+#     window (np.ndarray): Window function.
+
+#     Returns:
+#     np.ndarray: Windowed signal.
+#     """
+#     window = hamming_window(window_length)
+#     return np.divide(signal, window)
+
+# def inverse_window_chunks(chunks):
+#     return list(map(inverse_window, chunks))
+
+# def apply_inverse_ft(data):
+#     K, N = data.shape
+#     n = np.arange(N)
+#     k = n.reshape((N, 1))
+#     omega = np.exp(2j * np.pi * k * n / N)
+#     return data @ omega
+
+# def inverse_hamming(data, window_length=2048):
+#     window = hamming_window(window_length)
+#     inverse_window = lambda x: np.divide, window
+#     return map(data, inverse_window)
+
+# def combine_chunks(data, window_size=2048, hop_length=1024):
+    wav = []
+    for i,chunk in enumerate(data):
+        step = (window_size-hop_length)*i
+        wav.extend(chunk[step:step+(window_size-hop_length)])
+
+    return wav
+
+
