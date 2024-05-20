@@ -5,3 +5,5 @@ audio_processing/audio_test.ipynb
 nn_implementation/tensors/tensor_dataset_small/13493170201957854994/00000000.shard/00000000.snapshot
 nn_implementation/tensors/tensor_dataset_small/dataset_spec.pb
 nn_implementation/tensors/tensor_dataset_small/snapshot.metadata
+MUSDB18/
+nn_implementation/tensors/

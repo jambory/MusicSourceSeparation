@@ -56,6 +56,7 @@ class Separator(layers.Layer):
         self.m_i = layers.Conv1D(param.C*param.N, 1)
 
     def call(self, w): # (M, K, N)
+        M = w.shape[0]
         normalized_w = self.normalization(w) # (M, K, N)
         output = self.bottle_neck(normalized_w) # (M, K, B)
         skip_list = []
@@ -71,7 +72,7 @@ class Separator(layers.Layer):
 
         output = self.prelu(output)
         estimated_masks = self.m_i(output) # (M, K, C*N)
-        estimated_masks = activations.sigmoid(tf.reshape(estimated_masks, (self.M, self.C, self.K, self.N)))
+        estimated_masks = activations.sigmoid(tf.reshape(estimated_masks, (M, self.C, self.K, self.N)))
         return estimated_masks
     
 class Decoder(layers.Layer):
@@ -84,19 +85,20 @@ class Decoder(layers.Layer):
     """
     def __init__(self, param: Parameters):
         super(Decoder, self).__init__(name='Decoder')
-        self.M = param.M
+        # self.M = param.M
         self.C = param.C
         self.K = param.K
         self.L = param.L
         self.transpose_conv = layers.Conv1DTranspose(param.L,1)
 
     def call(self, m_i, w):
+        M = w.shape[0]
         est_sources =[]
         for i in range(self.C):
             source_mask = m_i[:,i,:,:]
             masked_source = w * source_mask
             est_src = self.transpose_conv(masked_source)
-            est_sources.append(tf.reshape(est_src, (self.M, 1, self.K, self.L)))
+            est_sources.append(tf.reshape(est_src, (M, 1, self.K, self.L)))
 
         decoded_outputs = tf.concat(est_sources, axis=1)
         return decoded_outputs        

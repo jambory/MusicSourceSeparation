@@ -7,7 +7,13 @@ class LOGL2(Loss):
         super(LOGL2, self).__init__(name="logl2")
         self.eps = 1e-7
     def call(self, s_hat, s_target):
-        return 10 * tf.norm(tf.experimental.numpy.log10(tf.norm((s_hat-s_target), axis=3, ord=2)), axis=2,ord=1)
+        # Calculate the L2 norm
+        l2_norm = tf.norm(s_target - s_hat, ord='euclidean')
+        
+        # Calculate the base-10 logarithm of the L2 norm
+        log10_l2_norm = tf.math.log(l2_norm) / tf.math.log(tf.constant(10, dtype=l2_norm.dtype))
+        
+        return log10_l2_norm + self.eps
     
 class SDR(tf.keras.losses.Loss):
 
