@@ -14,12 +14,12 @@ class Encoder(layers.Layer):
         N: Encoder output size
 
     """
-    def __init__(self, param: Parameters):
+    def __init__(self, param: Parameters): # Correction may be need to be made for inputs. The other implementations seem to take in batches of full songs rather  than little bites of songs.
         super(Encoder, self).__init__(name='Encoder')
-        self.U = layers.Conv1D(param.N,1)
+        self.U = layers.Conv1D(param.N,param.win,stride=param.win // 2, activation="relu",use_bias=False) # Made kernel size param.win, added stride, and activation relu 
 
-    def call(self, x): # (M, K, L)
-        return self.U(x) # (M, K, N)
+    def call(self, x): # (M, K, L) # Inputs are probably gonna be in form (M, T) now
+        return self.U(x) # (M, N)
 
         
 class Separator(layers.Layer):
@@ -39,7 +39,6 @@ class Separator(layers.Layer):
     """
     def __init__(self, param: Parameters):
         super(Separator, self).__init__(name='Separator')
-        self.M = param.M
         self.K = param.K
         self.C = param.C
         self.N = param.N
@@ -89,7 +88,7 @@ class Decoder(layers.Layer):
         self.C = param.C
         self.K = param.K
         self.L = param.L
-        self.transpose_conv = layers.Conv1DTranspose(param.L,1)
+        self.transpose_conv = layers.Conv1DTranspose(1,param.N,stride=param.win // 2,use_bias=False)
 
     def call(self, m_i, w):
         M = w.shape[0]

@@ -174,7 +174,7 @@ class Dataset:
                                               output_shapes=output_shapes)
     
 def load_unpack_tensordata():
-    tf_data = tf.data.Dataset.load('tensors/tensor_dataset_small')
+    tf_data = tf.data.Dataset.load('tensors/tensor_dataset_small_0')
     x = []
     y = []
     for obs in tf_data:
@@ -182,3 +182,24 @@ def load_unpack_tensordata():
         y.append(obs[1])
 
     return x, y
+
+def decode_wav(data, limit=17000):
+    param = DatasetParam()
+    num_samples = len(data[:limit]) # only 1000 to avoid memory issues
+
+    num_portions = (num_samples - param.overlap) // (param.num_fragments *
+                                                     (param.len_fragment - param.overlap))
+
+    num_samples_output = num_portions * param.num_fragments * (param.len_fragment - param.overlap)
+
+    num_samples = num_samples_output + param.overlap
+
+    model_input = np.zeros((num_portions, param.num_fragments, param.len_fragment))
+
+    for i in range(num_portions):
+            for j in range(param.num_fragments):
+                begin = (i * param.num_fragments + j) * (param.len_fragment - param.overlap)
+                end = begin + param.len_fragment
+                model_input[i][j] = data[begin:end]
+
+    return model_input, num_samples_output

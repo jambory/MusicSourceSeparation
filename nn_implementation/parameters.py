@@ -20,7 +20,7 @@ class Parameters:
                  R: int=3, # Amount of repeats of the Temporal Convolution block
                  X: int=8, # Amount of times Conv1DBlock is applied in a Temporal Convolution block
                  T: int=3000, # TODO: figure out how to get this param
-                 win: int=1, # Size of encoder-decoder kernels
+                 win: int=16, # Size of encoder-decoder kernels
                  overlap: int=8, # Amount of overlapping samples in adjacent chunks, typically L // 2
                  skip: bool=True, # Decides if skips are included to create features for mask generation
                  casual: bool=False # Decides if to use casual normalization or global normalization
