@@ -23,7 +23,8 @@ class Parameters:
                  win: int=16, # Size of encoder-decoder kernels
                  overlap: int=8, # Amount of overlapping samples in adjacent chunks, typically L // 2
                  skip: bool=True, # Decides if skips are included to create features for mask generation
-                 casual: bool=False # Decides if to use casual normalization or global normalization
+                 casual: bool=False, # Decides if to use casual normalization or global normalization
+                 naplab_impl: bool=False # Chooses if decoder uses naplab implementation for decoder or not
                  ):
         self.M = M
         self.K = K
@@ -40,6 +41,8 @@ class Parameters:
         self.overlap = overlap
         self.skip = skip
         self.casual = casual
+        self.naplab_impl = naplab_impl
+
 
     def get_config(self) -> dict:
         return {"M": self.M,
