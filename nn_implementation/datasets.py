@@ -23,24 +23,23 @@ class DatasetParam:
     TLDR: `Samples` in this section do not refer to samples the unit measurement within audio recording.
     """
     
-    __slots__ = 'num_songs', 'num_samples', 'num_fragments', 'len_fragment', 'overlap', 'repeat'
+    __slots__ = 'num_songs', 'num_samples', 'num_fragments', 'len_fragment', 'overlap', 'repeat', 'samplerate', 'segment'
 
     def __init__(self,
                 num_songs: int= 100,
                 num_samples: int=100,
-                num_fragments: int=40,
-                len_fragment: int=16,
                 overlap: int = 8,
-                repeat: int = 400):
-        if overlap >= len_fragment:
-            raise ValueError("overlap must be smaller than len_fragment.")
+                repeat: int = 50,
+                samplerate: int = 8000, # samplerate of audio files
+                segment: float = 4 # amount of seconds for audio segment to be, so T = samplerate*segment
+                ):
         
         self.num_songs = num_songs
         self.num_samples = num_samples
-        self.num_fragments = num_fragments
-        self.len_fragment = len_fragment
         self.overlap = overlap
         self.repeat = repeat
+        self.samplerate = samplerate
+        self.segment = segment
 
 class DecodedTrack:
     """ 
@@ -90,8 +89,10 @@ class Dataset:
     def __init__(self, 
                  root: str, # path to root directory
                  subsets: Union[str, List[str]] = "train", # Allows for param to be either of the types in Union obj
-                 max_decoded: int = 100):
-        self.tracks = list(musdb.DB(root=root, subsets=subsets))
+                 max_decoded: int = 100, # Max amount of decoded tracks in call
+                 samplerate = 8000 # samplerate of audio files
+                 ):
+        self.tracks = list(musdb.DB(root=root, subsets=subsets, sample_rate=samplerate))
         self.num_tracks = len(self.tracks)
         self.decoded: Dict[str, Union[None, DecodedTrack]] = [None] * self.num_tracks
         self.num_decoded = 0
@@ -121,7 +122,13 @@ class Dataset:
                 self.num_decoded += 1
                 self.ord_decoded[idx] = self.next_ord
                 self.next_ord += 1 # I assume this is to avoid any errors, running through indices, not really sure why it doesnt just break from the for loop
-
+    def normalize_array(self, arr):
+        mean = np.mean(arr)
+        std = np.std(arr)
+        if std == 0.0:
+            std = 1
+        normalized_arr = (arr - mean) / std
+        return normalized_arr
     def generate(self, 
                  p: DatasetParam):
         indices = list(range(self.num_tracks))
@@ -129,15 +136,15 @@ class Dataset:
         indices = indices[:p.num_songs]
         self.decode(indices)
 
-        duration = p.num_fragments * p.len_fragment - (p.num_fragments -1) * p.overlap
+        duration =  int(p.samplerate*p.segment)
 
         # make `p.repeat` batches
         for _ in range(p.repeat): # create each batch
             x_batch = np.zeros(
-                (p.num_samples * 2, p.num_fragments, p.len_fragment
+                (p.num_samples * 2, duration
             )) # use 2*num_samples as each fragment observation has a left and right value for each audio channel
             y_batch = np.zeros(
-                (p.num_samples * 2, len(Dataset.STEMS), p.num_fragments, p.len_fragment)
+                (p.num_samples * 2, len(Dataset.STEMS), duration)
             )
 
             # Make `2 * num_samples` samples for each batch
@@ -145,17 +152,17 @@ class Dataset:
                 track = self.decoded[random.choice(indices)] # take a random decoded track
                 start = random.randint(0, track.length - duration) # take some random part to start the song at
             
-                for j in range(p.num_fragments): # for each fragment in the sample
-                    left = i * 2 # left is 2 times the index of the sample we are on
-                    right = left+1 
-                    begin = start + j * (p.len_fragment - p.overlap)
-                    end = begin + p.len_fragment
-                    x_batch[left][j] = track.mixed[0][begin:end]
-                    x_batch[right][j] = track.mixed[1][begin:end]
-                    
-                    for c, stem in enumerate(Dataset.STEMS):
-                        y_batch[left][c][j] = track.stems[stem][0][begin:end]
-                        y_batch[right][c][j] = track.stems[stem][1][begin:end]
+                left = i * 2 # left is 2 times the index of the sample we are on
+                right = left+1 
+                begin = start
+                end = begin + duration
+                x_batch[left] = self.normalize_array(track.mixed[0][begin:end])
+                x_batch[right] = self.normalize_array(track.mixed[1][begin:end])
+                
+                for c, stem in enumerate(Dataset.STEMS):
+                    y_batch[left][c] = self.normalize_array(track.stems[stem][0][begin:end])
+                    y_batch[right][c] = self.normalize_array(track.stems[stem][1][begin:end])
+
 
             yield x_batch, y_batch
 
@@ -164,10 +171,10 @@ class Dataset:
         output_types = (tf.float32, tf.float32)
         output_shapes = (
             tf.TensorShape(
-                (p.num_samples * 2, p.num_fragments, p.len_fragment)
+                (p.num_samples * 2, int(p.segment* p.samplerate))
             ),
             tf.TensorShape(
-                (p.num_samples * 2, len(Dataset.STEMS), p.num_fragments, p.len_fragment)
+                (p.num_samples * 2, len(Dataset.STEMS), int(p.segment* p.samplerate))
             ))
         return tf.data.Dataset.from_generator(lambda:self.generate(p),
                                               output_types=output_types,

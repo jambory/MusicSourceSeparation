@@ -26,16 +26,34 @@ def load_waltz():
 
     return stems, track, sr
 
-def make_mask(stems):
-    """ 
-    Creates and plots masks using method shown in spectrogram_limits.ipynb.
+
+def orthogonal_projection(A, B):
     """
-    fig1, axes1 = plt.subplots(1,5, figsize=(15,4))
-    fig2, axes2 = plt.subplots(1,5, figsize=(15,4))
+    Compute the orthogonal projection of vector A onto vector B.
 
-    spec_data = [ap.create_spectrogram(stem, ax=axes1[i]) for i, stem in enumerate(stems)]
-    masks = 
+    Parameters:
+    A (array-like): Vector A
+    B (array-like): Vector B
 
+    Returns:
+    numpy.ndarray: The projection of A onto B
+    """
+    A = np.array(A)
+    B = np.array(B)
+    
+    # Compute the dot product of A and B
+    dot_product_AB = np.dot(A, B)
+    
+    # Compute the dot product of B with itself
+    dot_product_BB = np.dot(B, B)
+    
+    # Compute the projection scalar
+    projection_scalar = dot_product_AB / dot_product_BB
+    
+    # Compute the projection of A onto B
+    projection = projection_scalar * B
+    
+    return projection
 
 
 

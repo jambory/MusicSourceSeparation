@@ -3,25 +3,26 @@ import tensorflow as tf
 from tensorflow.keras import activations, layers
 
 from parameters import Parameters
-
+    
 class Encoder(layers.Layer):
     """ 
-    First step of model not counting, preprocessing data. Puts the inputs through a 1x1 Convolutional layer with N output channels.
-    A 1x1Convolutional layer can be interpreted and implemented as a Dense layer, but I chose not to implement it this way for clarity.
-    The layer also has a ReLU activation function attached to it.
+    First step of model not counting, preprocessing data. Puts the inputs through a 1D Convolutional layer with N output channels. The encoder also includes a activation
+    function of a ReLU layer.
 
     Args: 
         N: Encoder output size
+        win: Kernel size of encoder.
 
     """
-    def __init__(self, param: Parameters): # Correction may be need to be made for inputs. The other implementations seem to take in batches of full songs rather  than little bites of songs.
+    def __init__(self, param: Parameters):
         super(Encoder, self).__init__(name='Encoder')
-        self.U = layers.Conv1D(param.N,param.win,stride=param.win // 2, activation="relu",use_bias=False) # Made kernel size param.win, added stride, and activation relu 
+        self.U = layers.Conv1D(param.N,param.win,strides=param.overlap,activation="relu",use_bias=False, data_format="channels_last")
 
-    def call(self, x): # (M, K, L) # Inputs are probably gonna be in form (M, T) now
-        return self.U(x) # (M, N)
-
-        
+    def call(self, x): # (M, T)
+        batch_count,sample_count = x.shape
+        x = tf.reshape(x, (batch_count, sample_count, 1)) # (M, T, 1)
+        return self.U(x) # (M, K, N)
+      
 class Separator(layers.Layer):
     """ 
     To begin the we take the output of the encoder which we then normalize it and feed it into a 1x1Convolution.
@@ -30,16 +31,16 @@ class Separator(layers.Layer):
     with C*N output channels.
     Args:
         N: (int) Encoder output size
-        B: (int) Conv1DBlock output size
+        B: (int) Bottleneck Conv1DBlock output size
         R: (int) Amount of repeats of the Temporal Convolution block
         X: (int) Amount of times Conv1DBlock is applied in a Temporal Convolution block
         H: (int) Conv1DBlock input size
         C: (int) Amount of sources being estimated
+        P: (int) Size of kernel in depthwise convolutions
     
     """
     def __init__(self, param: Parameters):
         super(Separator, self).__init__(name='Separator')
-        self.K = param.K
         self.C = param.C
         self.N = param.N
         self.skip=param.skip
@@ -50,28 +51,29 @@ class Separator(layers.Layer):
         self.bottle_neck = layers.Conv1D(param.B,1)
         
         self.temporal_conv = [TemporalConv(param.X, param.H, param.B, param.P, param.casual, skip=param.skip) for r in range(param.R)]
-        self.skip_conn = layers.Add()
+        self.skip_add = layers.Add()
         self.prelu = layers.PReLU()
         self.m_i = layers.Conv1D(param.C*param.N, 1)
 
     def call(self, w): # (M, K, N)
-        M = w.shape[0]
+        M, K, _ = w.shape
         normalized_w = self.normalization(w) # (M, K, N)
         output = self.bottle_neck(normalized_w) # (M, K, B)
-        skip_list = []
-        for i,block in enumerate(self.temporal_conv):
+        if self.skip:
+            skip_conn = tf.zeros(output.shape)
+        for block in self.temporal_conv:
             if self.skip:
                 output, skips = block(output)
-                skip_list.append(skips)
+                skip_conn = self.skip_add([skip_conn, skips])
             else:
                 output = block(output)
         # (M, K, B)
         if self.skip:
-            output = self.skip_conn(skip_list)
+            output = skip_conn
 
         output = self.prelu(output)
         estimated_masks = self.m_i(output) # (M, K, C*N)
-        estimated_masks = activations.sigmoid(tf.reshape(estimated_masks, (M, self.C, self.K, self.N)))
+        estimated_masks = activations.sigmoid(tf.reshape(estimated_masks, (M, self.C, K, self.N))) # (M, C, K, N)
         return estimated_masks
     
 class Decoder(layers.Layer):
@@ -84,24 +86,30 @@ class Decoder(layers.Layer):
     """
     def __init__(self, param: Parameters):
         super(Decoder, self).__init__(name='Decoder')
-        # self.M = param.M
         self.C = param.C
-        self.K = param.K
         self.L = param.L
-        self.transpose_conv = layers.Conv1DTranspose(1,param.N,stride=param.win // 2,use_bias=False)
+        self.N = param.N
+        self.win = param.win
+        self.naplab_impl = param.naplab_impl
+        self.overlap = param.overlap
 
-    def call(self, m_i, w):
-        M = w.shape[0]
-        est_sources =[]
-        for i in range(self.C):
-            source_mask = m_i[:,i,:,:]
-            masked_source = w * source_mask
-            est_src = self.transpose_conv(masked_source)
-            est_sources.append(tf.reshape(est_src, (M, 1, self.K, self.L)))
+        if not self.naplab_impl:
+            self.transpose_conv = layers.Conv1DTranspose(self.L,self.win,strides=param.overlap,use_bias=False)
+        else:
+            self.transpose_conv = layers.Conv1DTranspose(1,self.win,strides=param.overlap,use_bias=False)
 
-        decoded_outputs = tf.concat(est_sources, axis=1)
-        return decoded_outputs        
-    
+    def call(self, w, m_i): # (M, K, N) (M, C, K, N)
+        M,K,_, = w.shape
+
+        w = tf.reshape(tf.repeat(w, 4, axis=0),m_i.shape) # (M, K, N) -> (M, C, K, N)
+        output = w * m_i # (M, C, K, N) * (M, C, K, N) 
+        output = self.transpose_conv(tf.reshape(output, (M*self.C, K, self.N))) # (M*C, T, 1) or (M*C, T, L)Okay so the official naplab implementation turns the encoded sources directly back into its wavform essentially 
+                                                                                # but the kaituoxo one seems to turn it into a 16 channel output then subsetting to only take the first chunk to deal with overlap
+        if not self.naplab_impl:
+            output = output[:,:,:self.overlap]
+        output = tf.reshape(output, (M,self.C,-1)) # (M, C, T)
+        return output   
+
 class Conv1DBlock(layers.Layer):
     def __init__(self, H, B, P, dilation, casual, skip = True):
         super(Conv1DBlock, self).__init__(name='Conv1DBlock')
@@ -114,6 +122,7 @@ class Conv1DBlock(layers.Layer):
             self.norm = gLN(H)
         
         self.depthwise = DepthwiseConv(H, B, P, dilation, casual, skip=self.skip)
+        self.res_add = layers.Add()
 
     def call(self, input):
         input_channels = self.input_channels(input)
@@ -121,9 +130,11 @@ class Conv1DBlock(layers.Layer):
         input_channels = self.norm(input_channels)
         if self.skip:
             res, skip = self.depthwise(input_channels)
+            res = self.res_add([res, input])
             return res, skip
 
         res = self.depthwise(input_channels, skip=self.skip)
+        res = self.res_add([res, input])
         return res
 
 class DepthwiseConv(layers.Layer):
@@ -131,7 +142,7 @@ class DepthwiseConv(layers.Layer):
         super(DepthwiseConv, self).__init__(name='DepthwiseConv')
         self.skip = skip
         if casual:
-            padding_type = "casual"
+            padding_type = "causal"
             self.norm = cLN(H)
         else:
             padding_type = "same"
@@ -140,17 +151,17 @@ class DepthwiseConv(layers.Layer):
         self.conv1d = layers.Conv1D(H, P, dilation_rate=dilation, padding=padding_type, groups=H)
         self.prelu = layers.PReLU()
         
-        self.res_out = layers.Conv1D(B, 1)
+        self.res_out = layers.Dense(B)
         if self.skip:
-            self.skip_out = layers.Conv1D(B, 1)
+            self.skip_out = layers.Dense(B)
     
     def call(self, input):
-        input = self.conv1d(input) 
-        input = self.prelu(input)
-        input = self.norm(input)
+        output = self.conv1d(input) 
+        output = self.prelu(output)
+        output = self.norm(output)
         res = self.res_out(input)
         if self.skip:
-            skip_out = self.skip_out(input)
+            skip_out = self.skip_out(output)
             return res, skip_out
         
         return res
@@ -165,29 +176,30 @@ class TemporalConv(layers.Layer):
             self.blocks += [Conv1DBlock(H, B, P, dilation, casual, skip=self.skip)]
         self.res_add = layers.Add()
         self.skip_add = layers.Add()
-        
+    
     def call(self, block_input):
-        skip_list = []
+        if self.skip:
+            skip_conn = tf.zeros(block_input.shape)
         for block in self.blocks:    
                 if self.skip:
                     res, skip = block(block_input)
                     block_input = self.res_add([block_input, res])
-                    skip_list.append(skip)
+                    skip_conn = self.skip_add([skip_conn,skip])
                 else:
                     res = block(block_input)
                     block_input = self.res_add([block_input, res])
         if self.skip:
-            skip_conn = self.skip_add(skip_list)
             return block_input, skip_conn
         return block_input
         
+
 class cLN(layers.Layer):
     def __init__(self, H, EPS = 1e-8):
         super(cLN, self).__init__(name="cLN")
         self.EPS = EPS
         shape = (1,1,H)
-        self.gamma = tf.Variable(tf.ones(shape),trainable=True,shape=shape)
-        self.beta = tf.Variable(tf.zeros(shape),trainable=True,shape=shape)
+        self.gamma = tf.Variable(tf.ones(shape),trainable=True,shape=shape,name="Casual Gamma")
+        self.beta = tf.Variable(tf.zeros(shape),trainable=True,shape=shape,name="Casual Beta")
 
     def call(self, input):
         # (M, K, H)
@@ -203,8 +215,8 @@ class gLN(layers.Layer):
         super(gLN, self).__init__(name="gLN")
         self.EPS = EPS
         shape = (1,1,H)
-        self.gamma = tf.Variable(tf.ones(shape),trainable=True,shape=shape)
-        self.beta = tf.Variable(tf.zeros(shape),trainable=True,shape=shape)
+        self.gamma = tf.Variable(tf.ones(shape),trainable=True,shape=shape,name="Global Gamma")
+        self.beta = tf.Variable(tf.zeros(shape),trainable=True,shape=shape,name="Global Beta")
 
     def call(self, input):
         # (M, K, H)
