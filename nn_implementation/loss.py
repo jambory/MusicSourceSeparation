@@ -33,7 +33,7 @@ class SDSDR(Loss):
 
         snr = 10 * tf.math.log((signal + self.eps) / (noise + self.eps)) / tf.math.log(tf.constant(10, dtype=signal.dtype))  # Typical SNR not one specific to MSS
 
-        sd_sdr = snr + 10 * tf.math.log(tf.square(alpha + self.eps)) / tf.math.log(tf.constant(10, dtype=signal.dtype))
+        sd_sdr = snr + 10 * tf.math.log(tf.square(alpha)) / tf.math.log(tf.constant(10, dtype=signal.dtype))
 
         return -tf.reduce_mean(sd_sdr)
 
@@ -43,7 +43,7 @@ class SISDR(Loss):
         self.eps = 1e-7  
     def call(self, s, s_hat): # (M, C, T)
         sources_energy = tf.reduce_sum(tf.square(s), axis=-1, keepdims=True)
-        alpha = tf.reduce_sum(tf.multiply(s,s_hat), keepdims=True) / sources_energy
+        alpha = tf.reduce_sum(tf.multiply(s,s_hat), axis=-1, keepdims=True) / (sources_energy+self.eps)
 
         e_true = tf.math.multiply(s, alpha)
         e_res = s_hat - e_true
@@ -51,10 +51,10 @@ class SISDR(Loss):
         signal = tf.reduce_sum(tf.square(e_true), axis=-1, keepdims=True)
         noise = tf.reduce_sum(tf.square(e_res), axis=-1, keepdims=True)
 
-        si_sdr = 10 * tf.math.log(signal / noise + self.eps) / tf.math.log(tf.constant(10, dtype=signal.dtype))
+        si_sdr = 10 * tf.math.log(signal / (noise + self.eps)) / tf.math.log(tf.constant(10, dtype=signal.dtype))
 
-        return -tf.reduce_mean(si_sdr, keepdims=True)
-    
+        return -tf.reduce_mean(si_sdr, name='loss') # Loss functions typically minimize, hence the negative sign
+  
 class SISNR(Loss):
     def __init__(self, eps=1e-7):
         super(SISNR, self).__init__(name="sisnr")
@@ -73,7 +73,7 @@ class SISNR(Loss):
         # Compute SI-SNR
         sisnr = 10 * tf.math.log((tf.norm(s_target)** 2 + self.eps) /
                                  (tf.norm(e_noise)** 2 + self.eps)) / tf.math.log(10.0)
-        return -tf.reduce_mean(sisnr)  # Loss functions typically minimize, hence the negative sign
+        return -tf.reduce_mean(sisnr, name='loss')  # Loss functions typically minimize, hence the negative sign
   
 class SDR(Loss):
 

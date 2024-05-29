@@ -41,3 +41,11 @@ nn_implementation/training_SDR_2/cp.ckpt.index
 nn_implementation/training_LOGL2/checkpoint
 /nn_implementation/data_v2
 nn_implementation/training_LOGL2/checkpoint
+nn_implementation/training_LOGL2/checkpoint
+nn_implementation/training_LOGL2/cp.ckpt.data-00000-of-00001
+nn_implementation/training_LOGL2/cp.ckpt.index
+nn_implementation/training_LOGL2_1/checkpoint
+nn_implementation/training_LOGL2_1/cp.ckpt.data-00000-of-00001
+nn_implementation/training_LOGL2_2/checkpoint
+nn_implementation/training_LOGL2_2/cp.ckpt.index
+nn_implementation/training_LOGL2_2/cp.ckpt.data-00000-of-00001
