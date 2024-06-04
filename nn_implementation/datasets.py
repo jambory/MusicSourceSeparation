@@ -122,17 +122,21 @@ class Dataset:
                 self.num_decoded += 1
                 self.ord_decoded[idx] = self.next_ord
                 self.next_ord += 1 # I assume this is to avoid any errors, running through indices, not really sure why it doesnt just break from the for loop
-    def normalize_array(self, arr):
+    def normalize_array(self, arr, pad=False, duration=None):
         mean = np.mean(arr)
         std = np.std(arr)
         if std == 0.0:
             std = 1
         normalized_arr = (arr - mean) / std
+        if pad:
+            N = duration - len(normalized_arr)
+            normalized_arr = np.pad(normalized_arr, (0,N), mode='constant')
         return normalized_arr
+    
     def generate(self, 
                  p: DatasetParam):
         indices = list(range(self.num_tracks))
-        random.shuffle(indices)
+        indices = random.shuffle(indices)
         indices = indices[:p.num_songs]
         self.decode(indices)
 
@@ -166,8 +170,57 @@ class Dataset:
 
             yield x_batch, y_batch
 
+    def generate_full_dataset(self, 
+                 p: DatasetParam,
+                 indices: list=list(range(100))):
+        self.decode(indices)
+
+        duration =  int(p.samplerate*p.segment)
+        start=0
+        idx=0
+        # make `p.repeat` batches
+        while idx < self.max_decoded: # create each batch
+            x_batch = np.zeros(
+                (p.num_samples * 2, duration
+            )) # use 2*num_samples as each fragment observation has a left and right value for each audio channel
+            y_batch = np.zeros(
+                (p.num_samples * 2, len(Dataset.STEMS), duration)
+            )
+
+            # Make `2 * num_samples` samples for each batch
+            for i in tqdm(range(p.num_samples), desc=f"Making Chunks for Song {idx}"): # For each sample to be made
+                if idx >= self.max_decoded:
+                    yield x_batch, y_batch
+                    break
+                track = self.decoded[idx] # take a random decoded track
+            
+                left = i * 2 # left is 2 times the index of the sample we are on
+                right = left+1 
+                begin = start
+                end = begin + duration
+                try:
+                    x_batch[left] = self.normalize_array(track.mixed[0][begin:end])
+                    x_batch[right] = self.normalize_array(track.mixed[1][begin:end])
+                    start += duration
+                except IndexError:
+                    x_batch[left] = self.normalize_array(track.mixed[0][begin:], pad=True, duration=duration)
+                    x_batch[right] = self.normalize_array(track.mixed[1][begin:], pad=True, duration=duration)
+                    start = 0
+                    idx += 1
+                
+                for c, stem in enumerate(Dataset.STEMS):
+                    try:
+                        y_batch[left][c] = self.normalize_array(track.stems[stem][0][begin:end])
+                        y_batch[right][c] = self.normalize_array(track.stems[stem][1][begin:end])
+                    except IndexError:
+                        y_batch[left][c] = self.normalize_array(track.stems[stem][0][begin:], pad=True, duration=duration)
+                        y_batch[right][c] = self.normalize_array(track.stems[stem][1][begin:], pad=True, duration=duration)
+
+            yield x_batch, y_batch
+
     def make_dataset(self,
-                     p: DatasetParam) -> tf.data.Dataset:
+                     p: DatasetParam
+                    ) -> tf.data.Dataset:
         output_types = (tf.float32, tf.float32)
         output_shapes = (
             tf.TensorShape(
@@ -177,6 +230,21 @@ class Dataset:
                 (p.num_samples * 2, len(Dataset.STEMS), int(p.segment* p.samplerate))
             ))
         return tf.data.Dataset.from_generator(lambda:self.generate(p),
+                                              output_types=output_types,
+                                              output_shapes=output_shapes)
+    
+    def make_full_dataset(self,
+                     p: DatasetParam,
+                    indices: list=list(range(100))) -> tf.data.Dataset:
+        output_types = (tf.float32, tf.float32)
+        output_shapes = (
+            tf.TensorShape(
+                (p.num_samples * 2, int(p.segment* p.samplerate))
+            ),
+            tf.TensorShape(
+                (p.num_samples * 2, len(Dataset.STEMS), int(p.segment* p.samplerate))
+            ))
+        return tf.data.Dataset.from_generator(lambda:self.generate_full_dataset(p, indices),
                                               output_types=output_types,
                                               output_shapes=output_shapes)
     
