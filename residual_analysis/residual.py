@@ -91,8 +91,9 @@ def plot_residuals_spec(spec_data, s_hat):
     Measures and plots residuals on spectrograms.
     Args:
         spec_data (list) list of spectral data
-    Returns:
         s_hat (list) list of source estimations.
+    Returns:
+        residuals (list): list of the residuals of the magnitude spectrum of the target and estimated sources.
     """
     fig, axes = plt.subplots(1,4, figsize=(15,4))
     residuals = []
@@ -217,7 +218,6 @@ def plot_res_pacf(est_signals, true_signals):
         est_signal (list): list of estimated audio source signals
         true_signals (list): list of actual audio source signals
     """
-    res_s
     res_signal = [est_signals[i]-true_signals[i] for i in range(4)]
     fig, axes = plt.subplots(1,4,figsize=(12,4))
     sources = ['Drums','Bass','Other','Vocals']
@@ -263,6 +263,8 @@ def calculate_phase_error(original_phase, masked_phase):
     Args:
         original_phase (list): list of phase information for targets
         masked_phase (list): list of phase information for estimated sources
+    Returns:
+        phase_error (list): a list of phase error correlating to each target source.
     """
     phase_error = []
     for i in range(4):
@@ -270,6 +272,11 @@ def calculate_phase_error(original_phase, masked_phase):
     return phase_error
 
 def plot_phase_error(phase_error, ticks=True):
+    """ 
+    Plots a spectrogram displaying the phase error. 
+    Args:
+        phase_error (list): a list of phase error correlating to each target source.
+    """
     fig, axes = plt.subplots(1,4, figsize=(15,4))
     sources = ['Drums','Bass','Other','Vocals']
 
@@ -290,6 +297,10 @@ def plot_phase_error(phase_error, ticks=True):
         cbar.set_ticklabels(labels)
 
 def create_zero_trans():    
+    """ 
+    Creates a custom color map, that is based on the 'Reds_r' colormap, but has a zero alpha value for elements with a zero value. 
+    This color map is to show the residual errors of my model and how they correlate to phase error.
+    """
     from matplotlib.colors import LinearSegmentedColormap
 
     # get colormap
@@ -311,6 +322,14 @@ def create_zero_trans():
         pass
 
 def plot_res_over_phase(phase_error, residuals, ticks=True):
+    """ 
+    Plots the residuals of the model over the phase error.
+
+    Args:
+        phase_error (list): a list of phase error correlating to each target source.
+        residuals (list): list of the residuals of the magnitude spectrum of the target and estimated sources.
+        ticks (bool) = True: optional, boolean value to determine if ticks are included in the spectrograms created 
+    """
     fig, axes = plt.subplots(1,4, figsize=(16,4))
     sources = ['Drums','Bass','Other','Vocals']
     try:
@@ -335,9 +354,19 @@ def plot_res_over_phase(phase_error, residuals, ticks=True):
         cbar.set_ticklabels(labels)
 
 def display_interactive_plot_res(residuals, phase_error):
+    """ 
+    Should have `%matplotlib widget` called before calling function.
+    Creates interactive plot of the residuals of the model over the phase error. Clicking a button allows for the residuals to appear
+    or disappear to give easier interpretation. 
+
+    Args:
+        residuals (list): list of the residuals of the magnitude spectrum of the target and estimated sources.
+        phase_error (list): a list of phase error correlating to each target source.
+        
+    """
     import ipywidgets as widgets
     from IPython.display import display
-
+    
     # Creates custom color map
     create_zero_trans()
 
@@ -353,10 +382,10 @@ def display_interactive_plot_res(residuals, phase_error):
         axes[i].set_ylim(0,512)
         
 
-    img1 = librosa.display.specshow(residuals[0], y_axis='log', x_axis='time',cmap='inf_zero_trans', ax=axes[0])
-    img2 = librosa.display.specshow(residuals[1], y_axis='log', x_axis='time',cmap='inf_zero_trans', ax=axes[1])
-    img3 = librosa.display.specshow(residuals[2], y_axis='log', x_axis='time',cmap='inf_zero_trans', ax=axes[2])
-    img4 = librosa.display.specshow(residuals[3], y_axis='log', x_axis='time',cmap='inf_zero_trans', ax=axes[3])
+    img1 = librosa.display.specshow(residuals[0], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[0])
+    img2 = librosa.display.specshow(residuals[1], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[1])
+    img3 = librosa.display.specshow(residuals[2], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[2])
+    img4 = librosa.display.specshow(residuals[3], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[3])
 
 
     # Create a checkbox widget
@@ -381,3 +410,87 @@ def display_interactive_plot_res(residuals, phase_error):
 
     # Display the plot
     plt.show()
+
+def calc_norms(residuals):
+    """ 
+    Calculates and returns the l1 and l2 norms of the residual function for each taret source. Also prints values to display.
+    Args:
+        residuals (list) list of residual values of each source
+    Returns:
+        MSE (list) list of mean values of each sources' residuals
+        me (list) list of mean squared values of each sources' residuals
+    """
+    sources = ['Drums','Bass','Other','Vocals']
+    MSE = []
+    me = []
+    for i, res in enumerate(residuals):
+        norm = np.mean(np.abs(res))
+        MSE.append(norm)
+        mse = np.mean(np.abs(res)**2)
+        me.append(mse)
+
+        print(f'{sources[i]}: MSE={mse}, l1={norm}')
+
+    return MSE, me
+
+def calc_evals(estimate, references, idx, calc_sirsar=True):
+    """ 
+    Calculates evaluation metrics using implementations detailed in https://arxiv.org/pdf/1811.02508.
+    Only calculates using mono channel audio.
+    Args: 
+        estimate: (np.array) Audio signal data of estimated source. In shape: (T, ) 
+        references: (np.array) Source audio signal data in shape: (T, C)
+        idx: (int) Index of target source within references matrix
+        calc_sirsar: (bool) Determines if SAR and SIR are calculated as in some cases it may be unnecessary
+
+    Returns:
+        SI-SDR: Scale-invariant source-to-distortion ratio. Higher is better.
+        SI-SIR: Scale-invariant source-to-interference ratio. Higher is better.
+        SI-SAR: Scale-invariant source-to-artifact ratio. Higher is better.
+        SD-SDR: Scale-dependent source-to-distortion ratio. Higher is better.
+        SNR: Signal-to-noise ratio. Higher is better.
+        SRR: The source-to-rescaled-source ratio. This corresponds to 
+      a term that punishes the estimate if its scale is off relative
+      to the reference. This is an unnumbered equation in [1], but
+      is the term on page 2, second column, second to last line:
+      ||s - alpha*s||**2. s here is factored out. Higher is better.
+
+    """
+    source = references[...,idx]
+    source_energy = (source**2).sum()
+    alpha = (source @ estimate) / source_energy
+
+    e_true = source
+    e_res = estimate - e_true
+
+    signal = (e_true**2).sum()
+    noise = (e_res**2).sum()
+
+    snr = 10 * np.log10(signal / noise)
+
+    e_true = source * alpha
+    e_res = estimate - e_true
+
+    signal = (e_true**2).sum()
+    noise = (e_res**2).sum()
+
+    si_sdr = 10 * np.log10(signal / noise)
+    srr = -10 * np.log10((1 - (1/alpha)) ** 2)
+    sd_sdr = snr + np.log10(alpha**2)
+
+    si_sir = np.nan
+    si_sar = np.nan
+
+    if calc_sirsar:
+        references_projection = references.T@references
+        references_onto_res = np.dot(references.T, e_res)
+
+        b = np.linalg.solve(references_projection, references_onto_res)
+
+        e_interf = np.dot(references, b)
+        e_artif = e_res - e_interf
+
+        si_sir = 10 * np.log10(signal / (e_interf**2).sum())
+        si_sar = 10 * np.log10(signal / (e_artif**2).sum())
+    
+    return si_sdr, si_sir, si_sar, sd_sdr, snr, srr
