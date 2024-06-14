@@ -208,7 +208,7 @@ def plot_song_sources(track):
     axes[0].legend(loc = 'upper left')
     axes[1].legend(loc = 'upper left')
 
-def create_spectrogram(audio, ax, win_size=2048, hop=None, title=None):
+def create_spectrogram(audio, ax, win_size=2048, hop=None, title=None, display=True):
     """ 
     Creates spectrograms of a given audio signal. The function first applies a short-time Fourier Transform (using librosa), 
     then creates the power maginitude spectrogram by simply taking the FT signal and applying an absolute value function and 
@@ -231,6 +231,9 @@ def create_spectrogram(audio, ax, win_size=2048, hop=None, title=None):
 
     X = librosa.stft(audio, n_fft=win_size, hop_length=hop)
     S = np.abs(X)
+
+    if not display:
+        return S,X
 
     img = librosa.display.specshow(librosa.amplitude_to_db(S), y_axis='log', x_axis='time',cmap='magma', ax=ax)
     if title:
