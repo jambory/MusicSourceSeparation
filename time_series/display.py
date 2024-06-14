@@ -6,7 +6,7 @@ import librosa
 import matplotlib.pyplot as plt
 import IPython.display as ipd
 import sys
-sys.path.append('../nn_implementation/')
+sys.path.append('model/')
 import convtas, parameters
 import tensorflow as tf
 tf.autograph.set_verbosity(0)

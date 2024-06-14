@@ -358,64 +358,6 @@ def plot_res_over_phase(phase_error, residuals, ticks=True):
         labels = [ "No Diff", "Pi"]
         cbar.set_ticklabels(labels)
 
-def display_interactive_plot_res(residuals, phase_error):
-    """ 
-    Should have `%matplotlib widget` called before calling function.
-    Creates interactive plot of the residuals of the model over the phase error. Clicking a button allows for the residuals to appear
-    or disappear to give easier interpretation. 
-
-    Args:
-        residuals (list): list of the residuals of the magnitude spectrum of the target and estimated sources.
-        phase_error (list): a list of phase error correlating to each target source.
-        
-    """
-    import ipywidgets as widgets
-    from IPython.display import display
-    
-    # Creates custom color map
-    create_zero_trans()
-
-    fig, axes = plt.subplots(1,4, figsize=(16,4))
-    sources = ['Drums','Bass','Other','Vocals']
-
-
-    for i in range(4):
-        img = librosa.display.specshow(np.abs(phase_error[i]), y_axis='log', x_axis='time',cmap='Blues', ax=axes[i])
-        axes[i].set_title(f'Residuals: {sources[i]}')
-        axes[i].set_xlabel('')
-        axes[i].set_ylabel('')
-        axes[i].set_ylim(0,512)
-        
-
-    img1 = librosa.display.specshow(residuals[0], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[0])
-    img2 = librosa.display.specshow(residuals[1], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[1])
-    img3 = librosa.display.specshow(residuals[2], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[2])
-    img4 = librosa.display.specshow(residuals[3], y_axis='log', x_axis='time',cmap='red_zero_trans', ax=axes[3])
-
-
-    # Create a checkbox widget
-    show_plot_checkbox = widgets.ToggleButton(
-        value=False,
-        description='Show Residuals',
-    )
-
-    # Update function to be called when the slider's value changes
-    def update_plot_visibility(change):
-        img1.set_visible(change['new'])
-        img2.set_visible(change['new'])
-        img3.set_visible(change['new'])
-        img4.set_visible(change['new'])
-        fig.canvas.draw_idle()
-
-    # Connect the checkbox to the update function
-    show_plot_checkbox.observe(update_plot_visibility, names='value')
-
-    # Display the checkbox
-    display(show_plot_checkbox)
-
-    # Display the plot
-    plt.show()
-
 def calc_norms(residuals):
     """ 
     Calculates and returns the l1 and l2 norms of the residual function for each taret source. Also prints values to display.
@@ -598,4 +540,30 @@ def source_csd(res_signals, psd, freq, idx: int, window_size=20):
             
         
     fig.suptitle(f"Cross Spectrums for Source: {sources[idx]}", fontsize=14)
+
+def lowpass_filter(data, cutoff, fs, order=5):
+    from scipy.signal import butter, filtfilt
+    nyquist = 0.5 * fs
+    normal_cutoff = cutoff / nyquist
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    y = filtfilt(b, a, data)
+    return y
+
+def lowpass_periodogram(densities, frequencies, cutoff, order=5, sr=44100):
+    fig, axes = plt.subplots(1,4, figsize=(12,3))
+    fig.suptitle("Low Pass Filtered Periodgrams")
+    sources = ['Drums','Bass','Other','Vocals']
+    lpfil_psd = []
+
+    for i in range(4):
+        lp_filterd = lowpass_filter(densities[i], cutoff, sr, order)
+        lpfil_psd.append(lp_filterd)
+
+        axes[i].semilogy(frequencies, lpfil_psd[i])
+        axes[i].set_xlabel('Frequency (Hz)')
+        axes[i].set_ylabel('Magnitude')
+        axes[i].set_title(f'{sources[i]}')
+        axes[i].grid(True)
+    
+    return lpfil_psd
     

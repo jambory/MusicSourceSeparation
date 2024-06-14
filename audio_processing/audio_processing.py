@@ -52,13 +52,11 @@ def split_wave(data, window_size=2048, hop_length=1024):
     Returns:
     - frames: overlapping chunks of audio signal.
     """
-    frames = [data[i : i + window_size] for i in range(0, len(data), hop_length)]
+    frames = []
+    for start in range(0,(len(data)-window_size), hop_length):
+        frames.append(data[start:start+window_size])
     # Since method of splitting can result in the last two chunks being smaller than window length, this checks will pad last two
     # windows with zeros if either are less than window_size
-    if len(frames[-1] != window_size):
-        frames[-1] = np.pad(frames[-1], (0, window_size - len(frames[-1])), 'constant')
-        if len(frames[-2]) != window_size:
-            frames[-2] = np.pad(frames[-2], (0, window_size - len(frames[-2])), 'constant')
     return frames
 
 def hamming_window(signal_length):
@@ -177,20 +175,20 @@ def plot_spectrogram(data, sr=44100):
     for i in indexes:
         freq_vals.append(int(frequency_bins[i]))
 
-    power_spectrum = np.abs(data)**2
+    power_spectrum = np.abs(data.T)**2
 
     # Plot each chunk as a separate spectrogram
     plt.figure(figsize=(10, 6))
-    plt.imshow((power_spectrum[:,:1023]).T, aspect='auto', origin='lower', cmap='inferno',norm=LogNorm())
-
-    plt.colorbar(label='Power')  # Add colorbar with label
+    plt.imshow(20 * np.log10(power_spectrum[:1023,:] + 1e-8),aspect='auto', origin='lower', cmap='magma')
+    plt.colorbar(label='Magnitude (dB)', format='%+2.0f dB')  # Add colorbar with label
 
 
     plt.yticks([])
     for i in range(len(indexes)):
         plt.annotate(freq_vals[i], xy=(0, indexes[i]), xytext=(-32, 0), textcoords='offset points', ha='left', va='center')
 
-    plt.xlabel('Time')
+    plt.xlim(0,12000)
+    plt.xlabel('Frame')
     plt.title('Spectrogram')
     plt.show()
 
