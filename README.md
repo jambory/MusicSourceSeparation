@@ -1,4 +1,4 @@
-# MSS-Project
+# MusicSourceSeparation
 
 *Wilcox, Coby*
 
